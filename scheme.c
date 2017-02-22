@@ -5,7 +5,7 @@
 
 /* MODEL */
 
-typedef enum {BOOLEAN, FIXNUM} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM} object_type;
 
 typedef struct object {
   object_type type;
@@ -14,6 +14,9 @@ typedef struct object {
     struct {
       char value;
     } boolean;
+    struct {
+      char value;
+    } character;
     struct {
       long value;
     } fixnum;
@@ -50,6 +53,10 @@ char is_boolean(object *obj) {
   return obj->type == BOOLEAN;
 }
 
+char is_character(object *obj) {
+  return obj->type == CHARACTER;
+}
+
 char is_false(object *obj) {
   return obj == false;
 }
@@ -60,6 +67,16 @@ char is_fixnum(object *obj) {
 
 char is_true(object *obj) {
   return !is_false(obj);
+}
+
+object *make_character(char value) {
+  object *obj;
+
+  obj = alloc_object();
+  obj->type = CHARACTER;
+  obj->data.character.value = value;
+
+  return obj;
 }
 
 object *make_fixnum(long value) {
@@ -107,6 +124,62 @@ void eat_whitespace(FILE *in) {
   }
 }
 
+void eat_expected_string(FILE *in, char *str) {
+  int c;
+
+  while (*str != '\0') {
+    c = getc(in);
+
+    if (c != *str) {
+      fprintf(stderr, "unexpected character '%c'\n", c);
+      exit(1);
+    }
+
+    str++;
+  }
+}
+
+void peek_expected_delimiter(FILE *in) {
+  if (!is_delimiter(peek(in))) {
+    fprintf(stderr, "character not followed by delimiter\n");
+    exit(1);
+  }
+}
+
+object *read_character(FILE *in) {
+  int c;
+
+  c = getc(in);
+
+  switch (c) {
+  case EOF:
+    fprintf(stderr, "incomplete character literal\n");
+    exit(1);
+  case 's':
+    if (peek(in) == 'p') {
+      eat_expected_string(in, "pace");
+      peek_expected_delimiter(in);
+
+      return make_character(' ');
+    }
+
+    break;
+  case 'n':
+    if (peek(in) == 'e') {
+      eat_expected_string(in, "ewline");
+      peek_expected_delimiter(in);
+
+      return make_character('\n');
+    }
+
+    break;
+  }
+
+  peek_expected_delimiter(in);
+
+  return make_character(c);
+}
+
 object *read(FILE *in) {
   int c;
   short sign = 1;
@@ -124,8 +197,10 @@ object *read(FILE *in) {
       return true;
     case 'f':
       return false;
+    case '\\':
+      return read_character(in);
     default:
-      fprintf(stderr, "unknown boolean literal\n");
+      fprintf(stderr, "unknown boolean or character literal\n");
       exit(1);
     }
   } else if (isdigit(c) || (c == '-' && (isdigit(peek(in))))) {
@@ -167,15 +242,36 @@ object *eval(object *exp) {
 /* PRINT */
 
 void write(object *obj) {
+  char c;
+
   switch (obj->type) {
   case BOOLEAN:
     printf("#%c", is_false(obj) ? 'f' : 't');
+
+    break;
+  case CHARACTER:
+    c = obj->data.character.value;
+    printf("#\\");
+
+    switch (c) {
+    case '\n':
+      printf("newline");
+      break;
+    case ' ':
+      printf("space");
+      break;
+    default:
+      putchar(c);
+    }
+
     break;
   case FIXNUM:
     printf("%ld", obj->data.fixnum.value);
+
     break;
   default:
     fprintf(stderr, "cannot write unknown type\n");
+
     exit(1);
   }
 }
