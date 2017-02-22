@@ -3,9 +3,11 @@
 #include <string.h>
 #include <ctype.h>
 
+#define BUFFER_MAX 1000
+
 /* MODEL */
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM, STRING} object_type;
 
 typedef struct object {
   object_type type;
@@ -20,6 +22,9 @@ typedef struct object {
     struct {
       long value;
     } fixnum;
+    struct {
+      char *value;
+    } string;
   } data;
 } object;
 
@@ -65,6 +70,10 @@ char is_fixnum(object *obj) {
   return obj->type == FIXNUM;
 }
 
+char is_string(object *obj) {
+  return obj->type == STRING;
+}
+
 char is_true(object *obj) {
   return !is_false(obj);
 }
@@ -89,8 +98,24 @@ object *make_fixnum(long value) {
   return obj;
 }
 
-/* READ */
+object *make_string(char *value) {
+  object *obj;
 
+  obj = alloc_object();
+  obj->type = STRING;
+  obj->data.string.value = malloc(strlen(value) + 1);
+
+  if (obj->data.string.value == NULL) {
+    fprintf(stderr, "out of memory\n");
+    exit(1);
+  }
+
+  strcpy(obj->data.string.value, value);
+
+  return obj;
+}
+
+/* READ */
 
 char is_delimiter(int c) {
   return isspace(c) || c == EOF ||
@@ -182,8 +207,10 @@ object *read_character(FILE *in) {
 
 object *read(FILE *in) {
   int c;
+  int i;
   short sign = 1;
   long num = 0;
+  char buffer[BUFFER_MAX];
 
   eat_whitespace(in);
 
@@ -224,6 +251,36 @@ object *read(FILE *in) {
       fprintf(stderr, "number not followed by delimiter\n");
       exit(1);
     }
+  } else if (c == '"') {
+    i = 0;
+
+    while ((c = getc(in)) != '"') {
+      if (c == '\\') {
+	c = getc(in);
+
+	if (c == 'n') {
+	  c = '\n';
+	}
+      }
+
+      if (c == EOF) {
+	fprintf(stderr, "non-terminated string literal\n");
+	exit(1);
+      }
+
+      if (i < BUFFER_MAX - 1) {
+	buffer[i++] = c;
+      } else {
+	fprintf(stderr,
+		"string too long. Maximum length is %d\n",
+		BUFFER_MAX);
+	exit(1);
+      }
+    }
+
+    buffer[i] = '\0';
+
+    return make_string(buffer);
   } else {
     fprintf(stderr, "bad input. Unexpected '%c'\n", c);
     exit(1);
@@ -243,12 +300,14 @@ object *eval(object *exp) {
 
 void write(object *obj) {
   char c;
+  char *str;
 
   switch (obj->type) {
   case BOOLEAN:
     printf("#%c", is_false(obj) ? 'f' : 't');
 
     break;
+
   case CHARACTER:
     c = obj->data.character.value;
     printf("#\\");
@@ -265,10 +324,44 @@ void write(object *obj) {
     }
 
     break;
+
   case FIXNUM:
     printf("%ld", obj->data.fixnum.value);
 
     break;
+
+  case STRING:
+    str = obj->data.string.value;
+
+    putchar('"');
+
+    while (*str != '\0') {
+      switch (*str) {
+      case '\n':
+	printf("\\n");
+
+	break;
+
+      case '\\':
+	printf("\\\\");
+
+	break;
+
+      case '"':
+	printf("\\\"");
+	break;
+
+      default:
+	putchar(*str);
+      }
+
+      str++;
+    }
+
+    putchar('"');
+
+    break;
+
   default:
     fprintf(stderr, "cannot write unknown type\n");
 
