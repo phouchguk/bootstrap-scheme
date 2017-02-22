@@ -5,12 +5,15 @@
 
 /* MODEL */
 
-typedef enum {FIXNUM} object_type;
+typedef enum {BOOLEAN, FIXNUM} object_type;
 
 typedef struct object {
   object_type type;
 
   union {
+    struct {
+      char value;
+    } boolean;
     struct {
       long value;
     } fixnum;
@@ -30,6 +33,34 @@ object *alloc_object(void) {
   return obj;
 }
 
+object *false;
+object *true;
+
+void init(void) {
+  false = alloc_object();
+  false->type = BOOLEAN;
+  false->data.boolean.value = 0;
+
+  true = alloc_object();
+  true->type = BOOLEAN;
+  true->data.boolean.value = 1;
+}
+
+char is_boolean(object *obj) {
+  return obj->type == BOOLEAN;
+}
+
+char is_false(object *obj) {
+  return obj == false;
+}
+
+char is_fixnum(object *obj) {
+  return obj->type == FIXNUM;
+}
+
+char is_true(object *obj) {
+  return !is_false(obj);
+}
 
 object *make_fixnum(long value) {
   object *obj;
@@ -40,11 +71,6 @@ object *make_fixnum(long value) {
 
   return obj;
 }
-
-char is_fixnum(object *obj) {
-  return obj->type == FIXNUM;
-}
-
 
 /* READ */
 
@@ -90,7 +116,19 @@ object *read(FILE *in) {
 
   c = getc(in);
 
-  if (isdigit(c) || (c == '-' && (isdigit(peek(in))))) {
+  if (c == '#') {
+    c = getc(in);
+
+    switch (c) {
+    case 't':
+      return true;
+    case 'f':
+      return false;
+    default:
+      fprintf(stderr, "unknown boolean literal\n");
+      exit(1);
+    }
+  } else if (isdigit(c) || (c == '-' && (isdigit(peek(in))))) {
     if (c == '-') {
       sign = -1;
     } else {
@@ -130,6 +168,9 @@ object *eval(object *exp) {
 
 void write(object *obj) {
   switch (obj->type) {
+  case BOOLEAN:
+    printf("#%c", is_false(obj) ? 'f' : 't');
+    break;
   case FIXNUM:
     printf("%ld", obj->data.fixnum.value);
     break;
@@ -144,6 +185,8 @@ void write(object *obj) {
 int main(void) {
   printf("Welcome to Bootstrap Scheme. "
 	 "Use ctrl-c to exit.\n");
+
+  init();
 
   while (1) {
     printf("> ");
