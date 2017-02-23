@@ -36,7 +36,8 @@
 
 /* MODEL */
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM, PAIR, STRING, THE_EMPTY_LIST} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM, PAIR,
+              STRING, SYMBOL, THE_EMPTY_LIST} object_type;
 
 typedef struct object {
   object_type type;
@@ -55,6 +56,9 @@ typedef struct object {
       struct object *car;
       struct object *cdr;
     } pair;
+    struct {
+      char *value;
+    } symbol;
     struct {
       char *value;
     } string;
@@ -77,6 +81,7 @@ object *alloc_object(void) {
 object *the_empty_list;
 object *false;
 object *true;
+object *symbol_table;
 
 object *car(object *pair) {
   return pair->data.pair.car;
@@ -108,6 +113,8 @@ void init(void) {
   true = alloc_object();
   true->type = BOOLEAN;
   true->data.boolean.value = 1;
+
+  symbol_table = the_empty_list;
 }
 
 char is_boolean(object *obj) {
@@ -126,12 +133,21 @@ char is_fixnum(object *obj) {
   return obj->type == FIXNUM;
 }
 
+char is_initial(int c) {
+  return isalpha(c) || c == '*' || c == '/' || c == '>' ||
+    c == '<' || c == '=' || c == '?' || c == '!';
+}
+
 char is_pair(object *obj) {
   return obj->type == PAIR;
 }
 
 char is_string(object *obj) {
   return obj->type == STRING;
+}
+
+char is_symbol(object *obj) {
+  return obj->type == SYMBOL;
 }
 
 char is_the_empty_list(object *obj) {
@@ -175,6 +191,35 @@ object *make_string(char *value) {
   }
 
   strcpy(obj->data.string.value, value);
+
+  return obj;
+}
+
+object *make_symbol(char *value) {
+  object *obj;
+  object *element;
+
+  element = symbol_table;
+
+  while (!is_the_empty_list(element)) {
+    if (strcmp(car(element)->data.symbol.value, value) == 0) {
+      return car(element);
+    }
+
+    element = cdr(element);
+  }
+
+  obj = alloc_object();
+  obj->type = SYMBOL;
+  obj->data.symbol.value = malloc(strlen(value) + 1);
+
+  if (obj->data.symbol.value == NULL) {
+    fprintf(stderr, "out of memory\n");
+    exit(1);
+  }
+
+  strcpy(obj->data.symbol.value, value);
+  symbol_table = cons(obj, symbol_table);
 
   return obj;
 }
@@ -371,6 +416,33 @@ object *read(FILE *in) {
       fprintf(stderr, "number not followed by delimiter\n");
       exit(1);
     }
+  } else if (is_initial(c) ||
+             ((c == '+' || c == '-') &&
+              is_delimiter(peek(in)))) { /* read a symbol */
+    i = 0;
+
+    while (is_initial(c) || isdigit(c) || c == '+' || c == '-') {
+      if (i < BUFFER_MAX - 1) {
+        buffer[i++] = c;
+      } else {
+        fprintf(stderr, "symbol too long. "
+                "Maximum length is %d\n", BUFFER_MAX);
+        exit(1);
+      }
+
+      c = getc(in);
+    }
+
+    if (is_delimiter(c)) {
+      buffer[i] = '\0';
+      ungetc(c, in);
+
+      return make_symbol(buffer);
+    } else {
+      fprintf(stderr, "symbol not followed by a delimiter. "
+              "Found '%c'\n", c);
+      exit(1);
+    }
   } else if (c == '"') {
     i = 0;
 
@@ -510,6 +582,11 @@ void write(object *obj) {
     }
 
     putchar('"');
+
+    break;
+
+  case SYMBOL:
+    printf("%s", obj->data.symbol.value);
 
     break;
 
