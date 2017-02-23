@@ -7,7 +7,7 @@
 
 /* MODEL */
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM, STRING} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM, STRING, THE_EMPTY_LIST} object_type;
 
 typedef struct object {
   object_type type;
@@ -41,10 +41,14 @@ object *alloc_object(void) {
   return obj;
 }
 
+object *the_empty_list;
 object *false;
 object *true;
 
 void init(void) {
+  the_empty_list = alloc_object();
+  the_empty_list->type = THE_EMPTY_LIST;
+
   false = alloc_object();
   false->type = BOOLEAN;
   false->data.boolean.value = 0;
@@ -72,6 +76,10 @@ char is_fixnum(object *obj) {
 
 char is_string(object *obj) {
   return obj->type == STRING;
+}
+
+char is_the_empty_list(object *obj) {
+  return obj->type == THE_EMPTY_LIST;
 }
 
 char is_true(object *obj) {
@@ -281,6 +289,18 @@ object *read(FILE *in) {
     buffer[i] = '\0';
 
     return make_string(buffer);
+  } else if (c == '(') {
+    eat_whitespace(in);
+    c = getc(in);
+
+    if (c == ')') {
+      return the_empty_list;
+    } else {
+      fprintf(stderr,
+	      "unexpected character '%c'. "
+	      "Expecting ')'\n", c);
+      exit(1);
+    }
   } else {
     fprintf(stderr, "bad input. Unexpected '%c'\n", c);
     exit(1);
@@ -360,6 +380,10 @@ void write(object *obj) {
 
     putchar('"');
 
+    break;
+
+  case THE_EMPTY_LIST:
+    printf("()");
     break;
 
   default:
