@@ -84,6 +84,24 @@ object *false;
 object *true;
 object *symbol_table;
 object *quote_symbol;
+object *define_symbol;
+object *set_symbol;
+object *ok_symbol;
+object *the_empty_environment;
+object *the_global_enironment;
+
+object *car(object *pair);
+object *cdr(object *pair);
+object *cons(object *car, object *cdr);
+void set_car(object *obj, object *value);
+void set_cdr(object *obj, object *value);
+
+void add_binding_to_frame(object *var,
+			  object *val,
+			  object *frame) {
+  set_car(frame, cons(var, car(frame)));
+  set_cdr(frame, cons(val, cdr(frame)));
+}
 
 object *car(object *pair) {
   return pair->data.pair.car;
@@ -104,7 +122,61 @@ object *cons(object *car, object *cdr) {
   return obj;
 }
 
+object *enclosing_environment(object *env) {
+  return cdr(env);
+}
+
+object *first_frame(object *env);
+object *frame_values(object *frame);
+object *frame_variables(object *frame);
+char is_the_empty_list(object *obj);
+
+void define_variable(object *var, object *val, object *env) {
+  object *frame;
+  object *vars;
+  object *vals;
+
+  frame = first_frame(env);
+  vars = frame_variables(frame);
+  vals = frame_values(frame);
+
+  while (!is_the_empty_list(vars)) {
+    if (var == car(vars)) {
+      set_car(vals, val);
+
+      return;
+    }
+
+    vars = cdr(vars);
+    vals = cdr(vals);
+  }
+
+  add_binding_to_frame(var, val, frame);
+}
+
+object *make_frame(object *vars, object *vals);
+
+object *extend_environment(object *vars,
+			   object *vals,
+			   object *base_env) {
+  return cons(make_frame(vars, vals), base_env);
+}
+
+object *first_frame(object *env) {
+  return car(env);
+}
+
+object *frame_values(object *frame) {
+  return cdr(frame);
+}
+
+object *frame_variables(object *frame) {
+  return car(frame);
+}
+
+
 object *make_symbol(char *value);
+object *setup_environment(void);
 
 void init(void) {
   the_empty_list = alloc_object();
@@ -123,6 +195,12 @@ void init(void) {
 
   symbol_table = the_empty_list;
   quote_symbol = make_symbol("quote");
+  define_symbol = make_symbol("define");
+  set_symbol = make_symbol("set!");
+  ok_symbol = make_symbol("ok");
+
+  the_empty_environment = the_empty_list;
+  the_global_enironment = setup_environment();
 }
 
 char is_boolean(object *obj) {
@@ -170,6 +248,32 @@ char is_true(object *obj) {
   return !is_false(obj);
 }
 
+object *lookup_variable_value(object *var, object *env) {
+  object *frame;
+  object *vars;
+  object *vals;
+
+  while (!is_the_empty_list(env)) {
+    frame = first_frame(env);
+    vars = frame_variables(frame);
+    vals = frame_values(frame);
+
+    while (!is_the_empty_list(vars)) {
+      if (var == car(vars)) {
+	return car(vals);
+      }
+
+      vars = cdr(vars);
+      vals = cdr(vals);
+    }
+
+    env = enclosing_environment(env);
+  }
+
+  fprintf(stderr, "unbound variable\n");
+  exit(1);
+}
+
 object *make_character(char value) {
   object *obj;
 
@@ -188,6 +292,10 @@ object *make_fixnum(long value) {
   obj->data.fixnum.value = value;
 
   return obj;
+}
+
+object *make_frame(object *vars, object *vals) {
+  return cons(vars, vals);
 }
 
 object *make_string(char *value) {
@@ -242,6 +350,44 @@ void set_car(object *obj, object *value) {
 
 void set_cdr(object *obj, object *value) {
   obj->data.pair.cdr = value;
+}
+
+void set_variable_value(object *var, object *val, object *env) {
+  object *frame;
+  object *vars;
+  object *vals;
+
+  while (!is_the_empty_list(env)) {
+    frame = first_frame(env);
+    vars = frame_variables(frame);
+    vals = frame_values(frame);
+
+    while (!is_the_empty_list(vars)) {
+      if (var == car(vars)) {
+	set_car(vals, val);
+
+	return;
+      }
+
+      vars = cdr(vars);
+      vals = cdr(vals);
+    }
+
+    env = enclosing_environment(env);
+  }
+
+  fprintf(stderr, "unbound variable\n");
+  exit(1);
+}
+
+object *setup_environment(void) {
+  object *initial_env;
+
+  initial_env = extend_environment(the_empty_list,
+				   the_empty_list,
+				   the_empty_environment);
+
+  return initial_env;
 }
 
 /* READ */
@@ -504,6 +650,36 @@ object *read(FILE *in) {
 
 /* EVAL */
 
+object *assignment_value(object *exp) {
+  return caddr(exp);
+}
+
+object *assignment_variable(object *exp) {
+  return cadr(exp);
+}
+
+object *definition_value(object *exp) {
+  return caddr(exp);
+}
+
+object *definition_variable(object *exp) {
+  return cadr(exp);
+}
+
+char is_tagged_list(object *exp, object *tag);
+
+char is_assignment(object *exp) {
+  return is_tagged_list(exp, set_symbol);
+}
+
+char is_definition(object *exp) {
+  return is_tagged_list(exp, define_symbol);
+}
+
+char is_quoted(object *exp) {
+  return is_tagged_list(exp, quote_symbol);
+}
+
 char is_self_evaluating(object *exp) {
   return is_boolean(exp) ||
     is_fixnum(exp) ||
@@ -523,25 +699,54 @@ char is_tagged_list(object *exp, object *tag) {
   return 0;
 }
 
-char is_quoted(object *exp) {
-  return is_tagged_list(exp, quote_symbol);
+char is_variable(object *exp) {
+  return is_symbol(exp);
 }
 
 object *text_of_quotation(object *exp) {
   return cadr(exp);
 }
 
-object *eval(object *exp) {
+object *eval(object *exp, object *env);
+
+object *eval_assignment(object *exp, object *env) {
+  set_variable_value(assignment_variable(exp),
+		     eval(assignment_value(exp), env),
+		     env);
+
+  return ok_symbol;
+}
+
+object *eval_definition(object *exp, object *env) {
+  define_variable(definition_variable(exp),
+		  eval(definition_value(exp), env),
+		  env);
+
+  return ok_symbol;
+}
+
+object *eval(object *exp, object *env) {
   if (is_self_evaluating(exp)) {
     return exp;
+  }
+
+  if (is_variable(exp)) {
+    return lookup_variable_value(exp, env);
   }
 
   if (is_quoted(exp)) {
     return text_of_quotation(exp);
   }
 
+  if (is_assignment(exp)) {
+    return eval_assignment(exp, env);
+  }
 
-  fprintf(stderr, "cannot eval unkown expression type\n");
+  if (is_definition(exp)) {
+    return eval_definition(exp, env);
+  }
+
+  fprintf(stderr, "cannot eval unknown expression type\n");
   exit(1);
 }
 
@@ -670,7 +875,7 @@ int main(void) {
 
   while (1) {
     printf("> ");
-    write(eval(read(stdin)));
+    write(eval(read(stdin), the_global_enironment));
     printf("\n");
   }
 
