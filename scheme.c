@@ -83,6 +83,7 @@ object *the_empty_string;
 object *false;
 object *true;
 object *symbol_table;
+object *quote_symbol;
 
 object *car(object *pair) {
   return pair->data.pair.car;
@@ -103,6 +104,8 @@ object *cons(object *car, object *cdr) {
   return obj;
 }
 
+object *make_symbol(char *value);
+
 void init(void) {
   the_empty_list = alloc_object();
   the_empty_list->type = THE_EMPTY_LIST;
@@ -119,6 +122,7 @@ void init(void) {
   true->data.boolean.value = 1;
 
   symbol_table = the_empty_list;
+  quote_symbol = make_symbol("quote");
 }
 
 char is_boolean(object *obj) {
@@ -487,6 +491,8 @@ object *read(FILE *in) {
     return make_string(buffer);
   } else if (c == '(') { /* read the empty list or pair */
     return read_pair(in);
+  } else if (c == '\'') { /* read quoted expression */
+    return cons(quote_symbol, cons(read(in), the_empty_string));
   } else {
     fprintf(stderr, "bad input. Unexpected '%c'\n", c);
     exit(1);
@@ -498,8 +504,45 @@ object *read(FILE *in) {
 
 /* EVAL */
 
+char is_self_evaluating(object *exp) {
+  return is_boolean(exp) ||
+    is_fixnum(exp) ||
+    is_character(exp) ||
+    is_string(exp);
+}
+
+char is_tagged_list(object *exp, object *tag) {
+  object *the_car;
+
+  if (is_pair(exp)) {
+    the_car = car(exp);
+
+    return is_symbol(the_car) && (the_car == tag);
+  }
+
+  return 0;
+}
+
+char is_quoted(object *exp) {
+  return is_tagged_list(exp, quote_symbol);
+}
+
+object *text_of_quotation(object *exp) {
+  return cadr(exp);
+}
+
 object *eval(object *exp) {
-  return exp;
+  if (is_self_evaluating(exp)) {
+    return exp;
+  }
+
+  if (is_quoted(exp)) {
+    return text_of_quotation(exp);
+  }
+
+
+  fprintf(stderr, "cannot eval unkown expression type\n");
+  exit(1);
 }
 
 /* PRINT */
