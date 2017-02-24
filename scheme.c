@@ -183,13 +183,6 @@ object *frame_variables(object *frame) {
   return car(frame);
 }
 
-
-object *make_primitive_proc(object *(*fn)(struct object *arguments));
-object *make_symbol(char *value);
-object *setup_environment(void);
-
-
-
 char is_boolean(object *obj) {
   return obj->type == BOOLEAN;
 }
