@@ -80,13 +80,18 @@ object *alloc_object(void) {
 
 object *the_empty_list;
 object *the_empty_string;
+
 object *false;
 object *true;
+
 object *symbol_table;
-object *quote_symbol;
+
 object *define_symbol;
-object *set_symbol;
+object *if_symbol;
 object *ok_symbol;
+object *quote_symbol;
+object *set_symbol;
+
 object *the_empty_environment;
 object *the_global_enironment;
 
@@ -194,10 +199,12 @@ void init(void) {
   true->data.boolean.value = 1;
 
   symbol_table = the_empty_list;
-  quote_symbol = make_symbol("quote");
+
   define_symbol = make_symbol("define");
-  set_symbol = make_symbol("set!");
+  if_symbol = make_symbol("if");
   ok_symbol = make_symbol("ok");
+  quote_symbol = make_symbol("quote");
+  set_symbol = make_symbol("set!");
 
   the_empty_environment = the_empty_list;
   the_global_enironment = setup_environment();
@@ -666,7 +673,27 @@ object *definition_variable(object *exp) {
   return cadr(exp);
 }
 
+object *if_alternative(object *exp) {
+  if (is_the_empty_list(cdddr(exp))) {
+    return false;
+  }
+
+  return cadddr(exp);
+}
+
+object *if_consequent(object *exp) {
+  return caddr(exp);
+}
+
+object *if_predicate(object *exp) {
+  return cadr(exp);
+}
+
 char is_tagged_list(object *exp, object *tag);
+
+char is_if(object *exp) {
+  return is_tagged_list(exp, if_symbol);
+}
 
 char is_assignment(object *exp) {
   return is_tagged_list(exp, set_symbol);
@@ -726,6 +753,7 @@ object *eval_definition(object *exp, object *env) {
 }
 
 object *eval(object *exp, object *env) {
+ tailcall:
   if (is_self_evaluating(exp)) {
     return exp;
   }
@@ -744,6 +772,14 @@ object *eval(object *exp, object *env) {
 
   if (is_definition(exp)) {
     return eval_definition(exp, env);
+  }
+
+  if (is_if(exp)) {
+    exp = is_true(eval(if_predicate(exp), env)) ?
+      if_consequent(exp) :
+      if_alternative(exp);
+
+    goto tailcall;
   }
 
   fprintf(stderr, "cannot eval unknown expression type\n");
