@@ -36,9 +36,9 @@
 
 /* MODEL */
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM, PAIR, PRIMITIVE_PROC,
-              STRING, SYMBOL, THE_EMPTY_LIST,
-	      THE_EMPTY_STRING} object_type;
+typedef enum {BOOLEAN, CHARACTER, COMPOUND_PROC, FIXNUM,
+              PAIR, PRIMITIVE_PROC, STRING, SYMBOL,
+              THE_EMPTY_LIST, THE_EMPTY_STRING} object_type;
 
 typedef struct object {
   object_type type;
@@ -50,6 +50,11 @@ typedef struct object {
     struct {
       char value;
     } character;
+    struct {
+      struct object *parameters;
+      struct object *body;
+      struct object *env;
+    } compound_proc;
     struct {
       long value;
     } fixnum;
@@ -92,6 +97,7 @@ object *symbol_table;
 
 object *define_symbol;
 object *if_symbol;
+object *lambda_symbol;
 object *ok_symbol;
 object *quote_symbol;
 object *set_symbol;
@@ -191,6 +197,10 @@ char is_character(object *obj) {
   return obj->type == CHARACTER;
 }
 
+char is_compound_proc(object *obj) {
+  return obj->type == COMPOUND_PROC;
+}
+
 char is_false(object *obj) {
   return obj == false;
 }
@@ -264,6 +274,20 @@ object *make_character(char value) {
   obj = alloc_object();
   obj->type = CHARACTER;
   obj->data.character.value = value;
+
+  return obj;
+}
+
+object *make_compound_proc(object *parameters,
+                           object *body,
+                           object *env) {
+  object *obj;
+
+  obj = alloc_object();
+  obj->type = COMPOUND_PROC;
+  obj->data.compound_proc.parameters = parameters;
+  obj->data.compound_proc.body = body;
+  obj->data.compound_proc.env = env;
 
   return obj;
 }
@@ -572,7 +596,11 @@ object *proc_is_pair(object *arguments) {
 }
 
 object *proc_is_procedure(object *arguments) {
-  return is_primitive_proc(car(arguments)) ? true : false;
+  object *obj;
+
+  obj = car(arguments);
+
+  return (is_primitive_proc(obj) || is_compound_proc(obj)) ? true : false;
 }
 
 object *proc_is_string(object *arguments) {
@@ -630,6 +658,7 @@ void init(void) {
 
   define_symbol = make_symbol("define");
   if_symbol = make_symbol("if");
+  lambda_symbol = make_symbol("lambda");
   ok_symbol = make_symbol("ok");
   quote_symbol = make_symbol("quote");
   set_symbol = make_symbol("set!");
@@ -945,12 +974,26 @@ object *assignment_variable(object *exp) {
   return cadr(exp);
 }
 
+object *make_lambda(object *parameters, object *body);
+
 object *definition_value(object *exp) {
-  return caddr(exp);
+  if (is_symbol(cadr(exp))) {
+      return caddr(exp);
+  }
+
+  return make_lambda(cdadr(exp), cddr(exp));
 }
 
 object *definition_variable(object *exp) {
-  return cadr(exp);
+  if (is_symbol(cadr(exp))) {
+    return cadr(exp);
+  }
+
+  return caadr(exp);
+}
+
+object *first_exp(object *seq) {
+  return car(seq);
 }
 
 object *first_operand(object *ops) {
@@ -991,6 +1034,14 @@ char is_definition(object *exp) {
   return is_tagged_list(exp, define_symbol);
 }
 
+char is_lambda(object *exp) {
+  return is_tagged_list(exp, lambda_symbol);
+}
+
+char is_last_exp(object *seq) {
+  return is_the_empty_list(cdr(seq));
+}
+
 char is_no_operands(object *ops) {
   return is_the_empty_list(ops);
 }
@@ -1023,6 +1074,18 @@ char is_variable(object *exp) {
   return is_symbol(exp);
 }
 
+object *lambda_body(object *exp) {
+  return cddr(exp);
+}
+
+object *lambda_parameters(object *exp) {
+  return cadr(exp);
+}
+
+object *make_lambda(object *parameters, object *body) {
+  return cons(lambda_symbol, cons(parameters, body));
+}
+
 object *operands(object *exp) {
   return cdr(exp);
 }
@@ -1033,6 +1096,10 @@ object *operator(object *exp) {
 
 object *rest_operands(object *ops) {
   return cdr(ops);
+}
+
+object *rest_exps(object *seq) {
+  return cdr(seq);
 }
 
 object *text_of_quotation(object *exp) {
@@ -1099,11 +1166,38 @@ object *eval(object *exp, object *env) {
     goto tailcall;
   }
 
+  if (is_lambda(exp)) {
+    return make_compound_proc(lambda_parameters(exp),
+                              lambda_body(exp),
+                              env);
+  }
+
   if (is_application(exp)) {
     procedure = eval(operator(exp), env);
     arguments = list_of_values(operands(exp), env);
 
-    return (procedure->data.primitive_proc.fn)(arguments);
+    if (is_primitive_proc(procedure)) {
+      return (procedure->data.primitive_proc.fn)(arguments);
+    }
+
+    if (is_compound_proc(procedure)) {
+      env = extend_environment(procedure->data.compound_proc.parameters,
+                               arguments,
+                               procedure->data.compound_proc.env);
+
+      exp = procedure->data.compound_proc.body;
+
+      while (!is_last_exp(exp)) {
+        eval(first_exp(exp), env);
+        exp = rest_exps(exp);
+      }
+
+      exp = first_exp(exp);
+      goto tailcall;
+    }
+
+    fprintf(stderr, "unknown procedure type\n");
+    exit(1);
   }
 
   fprintf(stderr, "cannot eval unknown expression type\n");
@@ -1174,6 +1268,7 @@ void write(object *obj) {
     break;
 
   case PRIMITIVE_PROC:
+  case COMPOUND_PROC:
     printf("#<procedure>");
 
     break;
