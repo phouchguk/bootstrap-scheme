@@ -37,7 +37,7 @@
 /* MODEL */
 
 typedef enum {BOOLEAN, CHARACTER, FIXNUM, PAIR,
-              STRING, SYMBOL, THE_EMPTY_LIST} object_type;
+              STRING, SYMBOL, THE_EMPTY_LIST, THE_EMPTY_STRING} object_type;
 
 typedef struct object {
   object_type type;
@@ -79,6 +79,7 @@ object *alloc_object(void) {
 }
 
 object *the_empty_list;
+object *the_empty_string;
 object *false;
 object *true;
 object *symbol_table;
@@ -105,6 +106,9 @@ object *cons(object *car, object *cdr) {
 void init(void) {
   the_empty_list = alloc_object();
   the_empty_list->type = THE_EMPTY_LIST;
+
+  the_empty_string = alloc_object();
+  the_empty_string->type = THE_EMPTY_STRING;
 
   false = alloc_object();
   false->type = BOOLEAN;
@@ -152,6 +156,10 @@ char is_symbol(object *obj) {
 
 char is_the_empty_list(object *obj) {
   return obj->type == THE_EMPTY_LIST;
+}
+
+char is_the_empty_string(object *obj) {
+  return obj->type == THE_EMPTY_STRING;
 }
 
 char is_true(object *obj) {
@@ -470,6 +478,10 @@ object *read(FILE *in) {
       }
     }
 
+    if (i == 0) { /* read the empty string */
+      return the_empty_string;
+    }
+
     buffer[i] = '\0';
 
     return make_string(buffer);
@@ -592,6 +604,10 @@ void write(object *obj) {
 
   case THE_EMPTY_LIST:
     printf("()");
+    break;
+
+  case THE_EMPTY_STRING:
+    printf("\"\"");
     break;
 
   default:
