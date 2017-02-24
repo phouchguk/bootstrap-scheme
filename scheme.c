@@ -1231,6 +1231,7 @@ void write_pair(object *pair) {
 void write(object *obj) {
   char c;
   char *str;
+  object *body;
 
   switch (obj->type) {
   case BOOLEAN:
@@ -1255,6 +1256,23 @@ void write(object *obj) {
 
     break;
 
+  case COMPOUND_PROC:
+    body = obj->data.compound_proc.body;
+
+    printf("(lambda ");
+    write(obj->data.compound_proc.parameters);
+    printf(" ");
+
+    if (is_pair(body)) {
+      write_pair(body);
+    } else {
+      write(body);
+    }
+
+    printf(")");
+
+    break;
+
   case FIXNUM:
     printf("%ld", obj->data.fixnum.value);
 
@@ -1268,7 +1286,6 @@ void write(object *obj) {
     break;
 
   case PRIMITIVE_PROC:
-  case COMPOUND_PROC:
     printf("#<procedure>");
 
     break;
