@@ -112,20 +112,6 @@ void add_binding_to_frame(object *var,
   set_cdr(frame, cons(val, cdr(frame)));
 }
 
-char is_the_empty_list(object *obj);
-object *make_fixnum(long value);
-
-object *add_proc(object *arguments) {
-  long result = 0;
-
-  while (!is_the_empty_list(arguments)) {
-    result += (car(arguments))->data.fixnum.value;
-    arguments = cdr(arguments);
-  }
-
-  return make_fixnum(result);
-}
-
 object *car(object *pair) {
   return pair->data.pair.car;
 }
@@ -152,6 +138,7 @@ object *enclosing_environment(object *env) {
 object *first_frame(object *env);
 object *frame_values(object *frame);
 object *frame_variables(object *frame);
+char is_the_empty_list(object *obj);
 
 void define_variable(object *var, object *val, object *env) {
   object *frame;
@@ -201,36 +188,7 @@ object *make_primitive_proc(object *(*fn)(struct object *arguments));
 object *make_symbol(char *value);
 object *setup_environment(void);
 
-void init(void) {
-  the_empty_list = alloc_object();
-  the_empty_list->type = THE_EMPTY_LIST;
 
-  the_empty_string = alloc_object();
-  the_empty_string->type = THE_EMPTY_STRING;
-
-  false = alloc_object();
-  false->type = BOOLEAN;
-  false->data.boolean.value = 0;
-
-  true = alloc_object();
-  true->type = BOOLEAN;
-  true->data.boolean.value = 1;
-
-  symbol_table = the_empty_list;
-
-  define_symbol = make_symbol("define");
-  if_symbol = make_symbol("if");
-  ok_symbol = make_symbol("ok");
-  quote_symbol = make_symbol("quote");
-  set_symbol = make_symbol("set!");
-
-  the_empty_environment = the_empty_list;
-  the_global_enironment = setup_environment();
-
-  define_variable(make_symbol("+"),
-		  make_primitive_proc(add_proc),
-		  the_global_enironment);
-}
 
 char is_boolean(object *obj) {
   return obj->type == BOOLEAN;
@@ -387,6 +345,17 @@ object *make_symbol(char *value) {
   return obj;
 }
 
+object *proc_add(object *arguments) {
+  long result = 0;
+
+  while (!is_the_empty_list(arguments)) {
+    result += (car(arguments))->data.fixnum.value;
+    arguments = cdr(arguments);
+  }
+
+  return make_fixnum(result);
+}
+
 void set_car(object *obj, object *value) {
   obj->data.pair.car = value;
 }
@@ -431,6 +400,37 @@ object *setup_environment(void) {
 				   the_empty_environment);
 
   return initial_env;
+}
+
+void init(void) {
+  the_empty_list = alloc_object();
+  the_empty_list->type = THE_EMPTY_LIST;
+
+  the_empty_string = alloc_object();
+  the_empty_string->type = THE_EMPTY_STRING;
+
+  false = alloc_object();
+  false->type = BOOLEAN;
+  false->data.boolean.value = 0;
+
+  true = alloc_object();
+  true->type = BOOLEAN;
+  true->data.boolean.value = 1;
+
+  symbol_table = the_empty_list;
+
+  define_symbol = make_symbol("define");
+  if_symbol = make_symbol("if");
+  ok_symbol = make_symbol("ok");
+  quote_symbol = make_symbol("quote");
+  set_symbol = make_symbol("set!");
+
+  the_empty_environment = the_empty_list;
+  the_global_enironment = setup_environment();
+
+  define_variable(make_symbol("+"),
+		  make_primitive_proc(proc_add),
+		  the_global_enironment);
 }
 
 /* READ */
