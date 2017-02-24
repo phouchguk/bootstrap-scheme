@@ -36,8 +36,9 @@
 
 /* MODEL */
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM, PAIR,
-              STRING, SYMBOL, THE_EMPTY_LIST, THE_EMPTY_STRING} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM, PAIR, PRIMITIVE_PROC,
+              STRING, SYMBOL, THE_EMPTY_LIST,
+	      THE_EMPTY_STRING} object_type;
 
 typedef struct object {
   object_type type;
@@ -56,6 +57,9 @@ typedef struct object {
       struct object *car;
       struct object *cdr;
     } pair;
+    struct {
+      struct object *(*fn)(struct object *arguments);
+    } primitive_proc;
     struct {
       char *value;
     } symbol;
@@ -108,6 +112,20 @@ void add_binding_to_frame(object *var,
   set_cdr(frame, cons(val, cdr(frame)));
 }
 
+char is_the_empty_list(object *obj);
+object *make_fixnum(long value);
+
+object *add_proc(object *arguments) {
+  long result = 0;
+
+  while (!is_the_empty_list(arguments)) {
+    result += (car(arguments))->data.fixnum.value;
+    arguments = cdr(arguments);
+  }
+
+  return make_fixnum(result);
+}
+
 object *car(object *pair) {
   return pair->data.pair.car;
 }
@@ -134,7 +152,6 @@ object *enclosing_environment(object *env) {
 object *first_frame(object *env);
 object *frame_values(object *frame);
 object *frame_variables(object *frame);
-char is_the_empty_list(object *obj);
 
 void define_variable(object *var, object *val, object *env) {
   object *frame;
@@ -180,6 +197,7 @@ object *frame_variables(object *frame) {
 }
 
 
+object *make_primitive_proc(object *(*fn)(struct object *arguments));
 object *make_symbol(char *value);
 object *setup_environment(void);
 
@@ -208,6 +226,10 @@ void init(void) {
 
   the_empty_environment = the_empty_list;
   the_global_enironment = setup_environment();
+
+  define_variable(make_symbol("+"),
+		  make_primitive_proc(add_proc),
+		  the_global_enironment);
 }
 
 char is_boolean(object *obj) {
@@ -233,6 +255,10 @@ char is_initial(int c) {
 
 char is_pair(object *obj) {
   return obj->type == PAIR;
+}
+
+char is_primitive_proc(object *obj) {
+  return obj->type == PRIMITIVE_PROC;
 }
 
 char is_string(object *obj) {
@@ -303,6 +329,16 @@ object *make_fixnum(long value) {
 
 object *make_frame(object *vars, object *vals) {
   return cons(vars, vals);
+}
+
+object *make_primitive_proc(object *(*fn)(struct object *arguments)) {
+  object *obj;
+
+  obj = alloc_object();
+  obj->type = PRIMITIVE_PROC;
+  obj->data.primitive_proc.fn = fn;
+
+  return obj;
 }
 
 object *make_string(char *value) {
@@ -673,6 +709,10 @@ object *definition_variable(object *exp) {
   return cadr(exp);
 }
 
+object *first_operand(object *ops) {
+  return car(ops);
+}
+
 object *if_alternative(object *exp) {
   if (is_the_empty_list(cdddr(exp))) {
     return false;
@@ -695,12 +735,20 @@ char is_if(object *exp) {
   return is_tagged_list(exp, if_symbol);
 }
 
+char is_application(object *exp) {
+  return is_pair(exp);
+}
+
 char is_assignment(object *exp) {
   return is_tagged_list(exp, set_symbol);
 }
 
 char is_definition(object *exp) {
   return is_tagged_list(exp, define_symbol);
+}
+
+char is_no_operands(object *ops) {
+  return is_the_empty_list(ops);
 }
 
 char is_quoted(object *exp) {
@@ -730,11 +778,32 @@ char is_variable(object *exp) {
   return is_symbol(exp);
 }
 
+object *operands(object *exp) {
+  return cdr(exp);
+}
+
+object *operator(object *exp) {
+  return car(exp);
+}
+
+object *rest_operands(object *ops) {
+  return cdr(ops);
+}
+
 object *text_of_quotation(object *exp) {
   return cadr(exp);
 }
 
 object *eval(object *exp, object *env);
+
+object *list_of_values(object *exps, object *env) {
+  if (is_no_operands(exps)) {
+    return the_empty_list;
+  }
+
+  return cons(eval(first_operand(exps), env),
+	      list_of_values(rest_operands(exps), env));
+}
 
 object *eval_assignment(object *exp, object *env) {
   set_variable_value(assignment_variable(exp),
@@ -753,6 +822,9 @@ object *eval_definition(object *exp, object *env) {
 }
 
 object *eval(object *exp, object *env) {
+  object *procedure;
+  object *arguments;
+
  tailcall:
   if (is_self_evaluating(exp)) {
     return exp;
@@ -780,6 +852,13 @@ object *eval(object *exp, object *env) {
       if_alternative(exp);
 
     goto tailcall;
+  }
+
+  if (is_application(exp)) {
+    procedure = eval(operator(exp), env);
+    arguments = list_of_values(operands(exp), env);
+
+    return (procedure->data.primitive_proc.fn)(arguments);
   }
 
   fprintf(stderr, "cannot eval unknown expression type\n");
@@ -846,6 +925,11 @@ void write(object *obj) {
     printf("(");
     write_pair(obj);
     printf(")");
+
+    break;
+
+  case PRIMITIVE_PROC:
+    printf("#<procedure>");
 
     break;
 
