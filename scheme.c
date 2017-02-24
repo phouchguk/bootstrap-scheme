@@ -95,6 +95,7 @@ object *true;
 
 object *symbol_table;
 
+object *begin_symbol;
 object *define_symbol;
 object *if_symbol;
 object *lambda_symbol;
@@ -656,6 +657,7 @@ void init(void) {
 
   symbol_table = the_empty_list;
 
+  begin_symbol = make_symbol("begin");
   define_symbol = make_symbol("define");
   if_symbol = make_symbol("if");
   lambda_symbol = make_symbol("lambda");
@@ -974,6 +976,10 @@ object *assignment_variable(object *exp) {
   return cadr(exp);
 }
 
+object *begin_actions(object *exp) {
+  return cdr(exp);
+}
+
 object *make_lambda(object *parameters, object *body);
 
 object *definition_value(object *exp) {
@@ -1018,10 +1024,6 @@ object *if_predicate(object *exp) {
 
 char is_tagged_list(object *exp, object *tag);
 
-char is_if(object *exp) {
-  return is_tagged_list(exp, if_symbol);
-}
-
 char is_application(object *exp) {
   return is_pair(exp);
 }
@@ -1030,8 +1032,16 @@ char is_assignment(object *exp) {
   return is_tagged_list(exp, set_symbol);
 }
 
+char is_begin(object *exp) {
+  return is_tagged_list(exp, begin_symbol);
+}
+
 char is_definition(object *exp) {
   return is_tagged_list(exp, define_symbol);
+}
+
+char is_if(object *exp) {
+  return is_tagged_list(exp, if_symbol);
 }
 
 char is_lambda(object *exp) {
@@ -1080,6 +1090,10 @@ object *lambda_body(object *exp) {
 
 object *lambda_parameters(object *exp) {
   return cadr(exp);
+}
+
+object *make_begin(object *exp) {
+  return cons(begin_symbol, exp);
 }
 
 object *make_lambda(object *parameters, object *body) {
@@ -1172,6 +1186,19 @@ object *eval(object *exp, object *env) {
                               env);
   }
 
+  if (is_begin(exp)) {
+    exp = begin_actions(exp);
+
+    while (!is_last_exp(exp)) {
+      eval(first_exp(exp), env);
+      exp = rest_exps(exp);
+    }
+
+    exp = first_exp(exp);
+
+    goto tailcall;
+  }
+
   if (is_application(exp)) {
     procedure = eval(operator(exp), env);
     arguments = list_of_values(operands(exp), env);
@@ -1185,14 +1212,8 @@ object *eval(object *exp, object *env) {
                                arguments,
                                procedure->data.compound_proc.env);
 
-      exp = procedure->data.compound_proc.body;
+      exp = make_begin(procedure->data.compound_proc.body);
 
-      while (!is_last_exp(exp)) {
-        eval(first_exp(exp), env);
-        exp = rest_exps(exp);
-      }
-
-      exp = first_exp(exp);
       goto tailcall;
     }
 
