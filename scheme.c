@@ -96,7 +96,9 @@ object *true;
 object *symbol_table;
 
 object *begin_symbol;
+object *cond_symbol;
 object *define_symbol;
+object *else_symbol;
 object *if_symbol;
 object *lambda_symbol;
 object *ok_symbol;
@@ -658,7 +660,9 @@ void init(void) {
   symbol_table = the_empty_list;
 
   begin_symbol = make_symbol("begin");
+  cond_symbol = make_symbol("cond");
   define_symbol = make_symbol("define");
+  else_symbol = make_symbol("else");
   if_symbol = make_symbol("if");
   lambda_symbol = make_symbol("lambda");
   ok_symbol = make_symbol("ok");
@@ -980,6 +984,24 @@ object *begin_actions(object *exp) {
   return cdr(exp);
 }
 
+object *cond_actions(object *clause) {
+  return cdr(clause);
+}
+
+object *cond_clauses(object *exp) {
+  return cdr(exp);
+}
+
+object *cond_predicate(object *clause) {
+  return car(clause);
+}
+
+object *expand_clauses(object *clauses);
+
+object *cond_to_if(object *exp) {
+  return expand_clauses(cond_clauses(exp));
+}
+
 object *make_lambda(object *parameters, object *body);
 
 object *definition_value(object *exp) {
@@ -996,6 +1018,37 @@ object *definition_variable(object *exp) {
   }
 
   return caadr(exp);
+}
+
+char is_cond_else_clause(object *clause);
+object *make_if(object *predicate,
+                object *consequent,
+                object *alternative);
+object *sequence_to_exp(object *seq);
+
+object *expand_clauses(object *clauses) {
+  object *first;
+  object *rest;
+
+  if (is_the_empty_list(clauses)) {
+    return false;
+  }
+
+  first = car(clauses);
+  rest = cdr(clauses);
+
+  if (is_cond_else_clause(first)) {
+    if (is_the_empty_list(rest)) {
+      return sequence_to_exp(cond_actions(first));
+    }
+
+    fprintf(stderr, "else clause isn't the last cond->if'");
+    exit(1);
+  }
+
+  return make_if(cond_predicate(first),
+                 sequence_to_exp(cond_actions(first)),
+                 expand_clauses(rest));
 }
 
 object *first_exp(object *seq) {
@@ -1034,6 +1087,14 @@ char is_assignment(object *exp) {
 
 char is_begin(object *exp) {
   return is_tagged_list(exp, begin_symbol);
+}
+
+char is_cond(object *exp) {
+  return is_tagged_list(exp, cond_symbol);
+}
+
+char is_cond_else_clause(object *clause) {
+  return cond_predicate(clause) == else_symbol;
 }
 
 char is_definition(object *exp) {
@@ -1096,6 +1157,15 @@ object *make_begin(object *exp) {
   return cons(begin_symbol, exp);
 }
 
+object *make_if(object *predicate,
+                object *consequent,
+                object *alternative) {
+  return cons(if_symbol,
+              cons(predicate,
+                   cons(consequent,
+                        cons(alternative, the_empty_list))));
+}
+
 object *make_lambda(object *parameters, object *body) {
   return cons(lambda_symbol, cons(parameters, body));
 }
@@ -1114,6 +1184,18 @@ object *rest_operands(object *ops) {
 
 object *rest_exps(object *seq) {
   return cdr(seq);
+}
+
+object *sequence_to_exp(object *seq) {
+  if (is_the_empty_list(seq)) {
+    return seq;
+  }
+
+  if (is_last_exp(seq)) {
+    return first_exp(seq);
+  }
+
+  return make_begin(seq);
 }
 
 object *text_of_quotation(object *exp) {
@@ -1195,6 +1277,12 @@ object *eval(object *exp, object *env) {
     }
 
     exp = first_exp(exp);
+
+    goto tailcall;
+  }
+
+  if (is_cond(exp)) {
+    exp = cond_to_if(exp);
 
     goto tailcall;
   }
