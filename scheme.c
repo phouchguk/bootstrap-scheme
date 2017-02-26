@@ -95,6 +95,7 @@ object *true;
 
 object *symbol_table;
 
+object *and_symbol;
 object *begin_symbol;
 object *cond_symbol;
 object *define_symbol;
@@ -103,6 +104,7 @@ object *if_symbol;
 object *lambda_symbol;
 object *let_symbol;
 object *ok_symbol;
+object *or_symbol;
 object *quote_symbol;
 object *set_symbol;
 
@@ -660,6 +662,7 @@ void init(void) {
 
   symbol_table = the_empty_list;
 
+  and_symbol = make_symbol("and");
   begin_symbol = make_symbol("begin");
   cond_symbol = make_symbol("cond");
   define_symbol = make_symbol("define");
@@ -668,6 +671,7 @@ void init(void) {
   lambda_symbol = make_symbol("lambda");
   let_symbol = make_symbol("let");
   ok_symbol = make_symbol("ok");
+  or_symbol = make_symbol("or");
   quote_symbol = make_symbol("quote");
   set_symbol = make_symbol("set!");
 
@@ -974,6 +978,10 @@ object *read(FILE *in) {
 
 /* EVAL */
 
+object *and_tests(object *exp) {
+  return cdr(exp);
+}
+
 object *assignment_value(object *exp) {
   return caddr(exp);
 }
@@ -1109,6 +1117,10 @@ char is_assignment(object *exp) {
   return is_tagged_list(exp, set_symbol);
 }
 
+char is_and(object *exp) {
+  return is_tagged_list(exp, and_symbol);
+}
+
 char is_begin(object *exp) {
   return is_tagged_list(exp, begin_symbol);
 }
@@ -1143,6 +1155,10 @@ char is_last_exp(object *seq) {
 
 char is_no_operands(object *ops) {
   return is_the_empty_list(ops);
+}
+
+char is_or(object *exp) {
+  return is_tagged_list(exp, or_symbol);
 }
 
 char is_quoted(object *exp) {
@@ -1236,6 +1252,10 @@ object *operator(object *exp) {
   return car(exp);
 }
 
+object *or_tests(object *exp) {
+  return cdr(exp);
+}
+
 object *rest_operands(object *ops) {
   return cdr(ops);
 }
@@ -1288,8 +1308,9 @@ object *eval_definition(object *exp, object *env) {
 }
 
 object *eval(object *exp, object *env) {
-  object *procedure;
   object *arguments;
+  object *procedure;
+  object *result;
 
  tailcall:
   if (is_self_evaluating(exp)) {
@@ -1347,6 +1368,50 @@ object *eval(object *exp, object *env) {
 
   if (is_let(exp)) {
     exp = let_to_application(exp);
+
+    goto tailcall;
+  }
+
+  if (is_and(exp)) {
+    exp = and_tests(exp);
+
+    if (is_the_empty_list(exp)) {
+      return true;
+    }
+
+    while (!is_last_exp(exp)) {
+      result = eval(first_exp(exp), env);
+
+      if (is_false(result)) {
+        return result;
+      }
+
+      exp = rest_exps(exp);
+    }
+
+    exp = first_exp(exp);
+
+    goto tailcall;
+  }
+
+  if (is_or(exp)) {
+    exp = or_tests(exp);
+
+    if (is_the_empty_list(exp)) {
+      return false;
+    }
+
+    while (!is_last_exp(exp)) {
+      result = eval(first_exp(exp), env);
+
+      if (is_true(result)) {
+        return result;
+      }
+
+      exp = rest_exps(exp);
+    }
+
+    exp = first_exp(exp);
 
     goto tailcall;
   }
