@@ -101,6 +101,7 @@ object *define_symbol;
 object *else_symbol;
 object *if_symbol;
 object *lambda_symbol;
+object *let_symbol;
 object *ok_symbol;
 object *quote_symbol;
 object *set_symbol;
@@ -665,6 +666,7 @@ void init(void) {
   else_symbol = make_symbol("else");
   if_symbol = make_symbol("if");
   lambda_symbol = make_symbol("lambda");
+  let_symbol = make_symbol("let");
   ok_symbol = make_symbol("ok");
   quote_symbol = make_symbol("quote");
   set_symbol = make_symbol("set!");
@@ -984,6 +986,28 @@ object *begin_actions(object *exp) {
   return cdr(exp);
 }
 
+object *binding_argument(object *binding) {
+  return cadr(binding);
+}
+
+object *binding_arguments(object *bindings) {
+  return is_the_empty_list(bindings) ?
+    the_empty_list :
+    cons(binding_argument(car(bindings)),
+         binding_arguments(cdr(bindings)));
+}
+
+object *binding_parameter(object *binding) {
+  return car(binding);
+}
+
+object *binding_parameters(object *bindings) {
+  return is_the_empty_list(bindings) ?
+    the_empty_list :
+    cons(binding_parameter(car(bindings)),
+         binding_parameters(cdr(bindings)));
+}
+
 object *cond_actions(object *clause) {
   return cdr(clause);
 }
@@ -1109,6 +1133,10 @@ char is_lambda(object *exp) {
   return is_tagged_list(exp, lambda_symbol);
 }
 
+char is_let(object *exp) {
+  return is_tagged_list(exp, let_symbol);
+}
+
 char is_last_exp(object *seq) {
   return is_the_empty_list(cdr(seq));
 }
@@ -1151,6 +1179,36 @@ object *lambda_body(object *exp) {
 
 object *lambda_parameters(object *exp) {
   return cadr(exp);
+}
+
+object *let_bindings(object *exp);
+
+object *let_arguments(object *exp) {
+  return binding_arguments(let_bindings(exp));
+}
+
+object *let_bindings(object *exp) {
+  return cadr(exp);
+}
+
+object *let_body(object *exp) {
+  return cddr(exp);
+}
+
+object *let_parameters(object *exp) {
+  return binding_parameters(let_bindings(exp));
+}
+
+object *make_application(object *operator, object *operands);
+
+object *let_to_application(object *exp) {
+  return make_application(make_lambda(let_parameters(exp),
+                                      let_body(exp)),
+                          let_arguments(exp));
+}
+
+object *make_application(object *operator, object *operands) {
+  return cons(operator, operands);
 }
 
 object *make_begin(object *exp) {
@@ -1283,6 +1341,12 @@ object *eval(object *exp, object *env) {
 
   if (is_cond(exp)) {
     exp = cond_to_if(exp);
+
+    goto tailcall;
+  }
+
+  if (is_let(exp)) {
+    exp = let_to_application(exp);
 
     goto tailcall;
   }
