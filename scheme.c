@@ -427,6 +427,13 @@ object *proc_add(object *arguments) {
   return make_fixnum(result);
 }
 
+object *proc_apply(object *arguments) {
+  fprintf(stderr, "illegal state. The body of the apply "
+          "primative procedure should not execute.\n");
+
+  exit(1);
+}
+
 object *proc_car(object *arguments) {
   return caar(arguments);
 }
@@ -716,6 +723,8 @@ void init(void) {
   add_procedure("list", proc_list);
 
   add_procedure("eq?", proc_is_eq);
+
+  add_procedure("apply", proc_apply);
 }
 
 /* READ */
@@ -980,6 +989,16 @@ object *read(FILE *in) {
 
 object *and_tests(object *exp) {
   return cdr(exp);
+}
+
+object *apply_operator(object *arguments) {
+  return car(arguments);
+}
+
+object *prepare_apply_operands(object *arguments);
+
+object *apply_operands(object *arguments) {
+  return prepare_apply_operands(cdr(arguments));
 }
 
 object *assignment_value(object *exp) {
@@ -1256,6 +1275,15 @@ object *or_tests(object *exp) {
   return cdr(exp);
 }
 
+object *prepare_apply_operands(object *arguments) {
+  if (is_the_empty_list(cdr(arguments))) {
+    return car(arguments);
+  }
+
+  return cons(car(arguments),
+              prepare_apply_operands(cdr(arguments)));
+}
+
 object *rest_operands(object *ops) {
   return cdr(ops);
 }
@@ -1419,6 +1447,12 @@ object *eval(object *exp, object *env) {
   if (is_application(exp)) {
     procedure = eval(operator(exp), env);
     arguments = list_of_values(operands(exp), env);
+
+    if (is_primitive_proc(procedure) &&
+        procedure->data.primitive_proc.fn == proc_apply) {
+      procedure = apply_operator(arguments);
+      arguments = apply_operands(arguments);
+    }
 
     if (is_primitive_proc(procedure)) {
       return (procedure->data.primitive_proc.fn)(arguments);
