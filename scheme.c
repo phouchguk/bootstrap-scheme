@@ -109,7 +109,7 @@ object *quote_symbol;
 object *set_symbol;
 
 object *the_empty_environment;
-object *the_global_enironment;
+object *the_global_environment;
 
 object *car(object *pair);
 object *cdr(object *pair);
@@ -298,6 +298,18 @@ object *make_compound_proc(object *parameters,
   return obj;
 }
 
+void populate_environment(object *env);
+object *setup_environment(void);
+
+object *make_environment(void) {
+  object *env;
+
+  env = setup_environment();
+  populate_environment(env);
+
+  return env;
+}
+
 object *make_fixnum(long value) {
   object *obj;
 
@@ -429,13 +441,20 @@ object *proc_add(object *arguments) {
 
 object *proc_apply(object *arguments) {
   fprintf(stderr, "illegal state. The body of the apply "
-          "primative procedure should not execute.\n");
+          "primitive procedure should not execute.\n");
 
   exit(1);
 }
 
 object *proc_car(object *arguments) {
   return caar(arguments);
+}
+
+object *proc_eval(object *arguments) {
+  fprintf(stderr, "illegal state. The body of the eval "
+          "primitive procedure should not execute.\n");
+
+  exit(1);
 }
 
 object *proc_set_car(object *arguments) {
@@ -448,14 +467,16 @@ object *proc_cdr(object *arguments) {
   return cdar(arguments);
 }
 
-object *proc_set_cdr(object *arguments) {
-  set_cdr(car(arguments), cadr(arguments));
-
-  return ok_symbol;
-}
-
 object *proc_cons(object *arguments) {
   return cons(car(arguments), cadr(arguments));
+}
+
+object *proc_environment(object *arguments) {
+  return make_environment();
+}
+
+object *proc_interaction_environment(object *arguments) {
+  return the_global_environment;
 }
 
 object *proc_list(object *arguments) {
@@ -471,6 +492,16 @@ object *proc_mul(object *arguments) {
   }
 
   return make_fixnum(result);
+}
+
+object *proc_null_environment(object *arguments) {
+  return setup_environment();
+}
+
+object *proc_set_cdr(object *arguments) {
+  set_cdr(car(arguments), cadr(arguments));
+
+  return ok_symbol;
 }
 
 object *proc_sub(object *arguments) {
@@ -683,12 +714,15 @@ void init(void) {
   set_symbol = make_symbol("set!");
 
   the_empty_environment = the_empty_list;
-  the_global_enironment = setup_environment();
+  the_global_environment = make_environment();
+}
+
+void populate_environment(object *env) {
 
 #define add_procedure(scheme_name, c_name) \
   define_variable(make_symbol(scheme_name), \
 		  make_primitive_proc(c_name), \
-		  the_global_enironment);
+		  env);
 
   add_procedure("null?", proc_is_null);
   add_procedure("boolean?", proc_is_boolean);
@@ -725,6 +759,11 @@ void init(void) {
   add_procedure("eq?", proc_is_eq);
 
   add_procedure("apply", proc_apply);
+  add_procedure("interaction-environment",
+                proc_interaction_environment);
+  add_procedure("null-environment", proc_null_environment);
+  add_procedure("environment", proc_environment);
+  add_procedure("eval", proc_eval);
 }
 
 /* READ */
@@ -1069,6 +1108,14 @@ object *definition_variable(object *exp) {
   }
 
   return caadr(exp);
+}
+
+object *eval_environment(object *arguments) {
+  return cadr(arguments);
+}
+
+object *eval_expression(object *arguments) {
+  return car(arguments);
 }
 
 char is_cond_else_clause(object *clause);
@@ -1448,13 +1495,19 @@ object *eval(object *exp, object *env) {
     procedure = eval(operator(exp), env);
     arguments = list_of_values(operands(exp), env);
 
-    if (is_primitive_proc(procedure) &&
-        procedure->data.primitive_proc.fn == proc_apply) {
-      procedure = apply_operator(arguments);
-      arguments = apply_operands(arguments);
-    }
-
     if (is_primitive_proc(procedure)) {
+      if (procedure->data.primitive_proc.fn == proc_eval) {
+        exp = eval_expression(arguments);
+        env = eval_environment(arguments);
+
+        goto tailcall;
+      }
+
+      if (procedure->data.primitive_proc.fn == proc_apply) {
+        procedure = apply_operator(arguments);
+        arguments = apply_operands(arguments);
+      }
+
       return (procedure->data.primitive_proc.fn)(arguments);
     }
 
@@ -1624,7 +1677,7 @@ int main(void) {
 
   while (1) {
     printf("> ");
-    write(eval(read(stdin), the_global_enironment));
+    write(eval(read(stdin), the_global_environment));
     printf("\n");
   }
 
