@@ -789,7 +789,9 @@ void eat_whitespace(FILE *in) {
   while ((c = getc(in)) != EOF) {
     if (isspace(c)) {
       continue;
-    } else if (c == ';') {
+    }
+
+    if (c == ';') {
       while (((c = getc(in)) != EOF) && (c != '\n'));
       continue;
     }
@@ -929,7 +931,9 @@ object *read(FILE *in) {
       fprintf(stderr, "unknown boolean or character literal\n");
       exit(1);
     }
-  } else if (isdigit(c) || (c == '-' && (isdigit(peek(in))))) {
+  }
+
+  if (isdigit(c) || (c == '-' && (isdigit(peek(in))))) {
     if (c == '-') {
       sign = -1;
     } else {
@@ -946,13 +950,15 @@ object *read(FILE *in) {
       ungetc(c, in);
 
       return make_fixnum(num);
-    } else {
-      fprintf(stderr, "number not followed by delimiter\n");
-      exit(1);
     }
-  } else if (is_initial(c) ||
-             ((c == '+' || c == '-') &&
-              is_delimiter(peek(in)))) { /* read a symbol */
+
+    fprintf(stderr, "number not followed by delimiter\n");
+    exit(1);
+  }
+
+  if (is_initial(c) ||
+      ((c == '+' || c == '-') &&
+       is_delimiter(peek(in)))) { /* read a symbol */
     i = 0;
 
     while (is_initial(c) || isdigit(c) || c == '+' || c == '-') {
@@ -972,12 +978,14 @@ object *read(FILE *in) {
       ungetc(c, in);
 
       return make_symbol(buffer);
-    } else {
-      fprintf(stderr, "symbol not followed by a delimiter. "
-              "Found '%c'\n", c);
-      exit(1);
     }
-  } else if (c == '"') {
+
+    fprintf(stderr, "symbol not followed by a delimiter. "
+            "Found '%c'\n", c);
+    exit(1);
+  }
+
+  if (c == '"') {
     i = 0;
 
     while ((c = getc(in)) != '"') {
@@ -1011,16 +1019,17 @@ object *read(FILE *in) {
     buffer[i] = '\0';
 
     return make_string(buffer);
-  } else if (c == '(') { /* read the empty list or pair */
-    return read_pair(in);
-  } else if (c == '\'') { /* read quoted expression */
-    return cons(quote_symbol, cons(read(in), the_empty_string));
-  } else {
-    fprintf(stderr, "bad input. Unexpected '%c'\n", c);
-    exit(1);
   }
 
-  fprintf(stderr, "read illegal state\n");
+  if (c == '(') { /* read the empty list or pair */
+    return read_pair(in);
+  }
+
+  if (c == '\'') { /* read quoted expression */
+    return cons(quote_symbol, cons(read(in), the_empty_string));
+  }
+
+  fprintf(stderr, "bad input. Unexpected '%c'\n", c);
   exit(1);
 }
 
