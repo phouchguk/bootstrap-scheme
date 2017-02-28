@@ -1265,6 +1265,10 @@ object *read(FILE *in) {
     return cons(quote_symbol, cons(read(in), the_empty_string));
   }
 
+  if (c == EOF) {
+    return NULL;
+  }
+
   fprintf(stderr, "bad input. Unexpected '%c'\n", c);
   exit(1);
 }
